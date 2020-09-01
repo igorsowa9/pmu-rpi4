@@ -1,0 +1,2 @@
+gcc -o triggered AInScanWithTrigger.c -l uldaq -lm -l paho-mqtt3c
+
