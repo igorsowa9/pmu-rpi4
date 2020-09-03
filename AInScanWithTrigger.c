@@ -26,6 +26,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <complex.h>
+#include <time.h>
+#include <sys/timeb.h>
+#include <sys/time.h>
+#include <math.h>
 #include "uldaq.h"
 #include "utility.h"
 #include "math.h"
@@ -33,6 +38,8 @@
 #define MAX_DEV_COUNT  100
 #define MAX_STR_LENGTH 64
 #define MAX_SCAN_OPTIONS_LENGTH 256
+
+#define M_PI 3.14159265358979323846
 
 int main(void)
 {
@@ -197,10 +204,16 @@ int main(void)
 	int samplesAcq = samplesPerChannel * n_channel; // 16*2 for 2 channels and 100kS
 	float real_rate;
 
-	int xi, pps_detect, pps_xi, pps_idx;
+	int pps_detect, pps_xi, pps_idx;
 	long long int pps_idx_sum = 0;
 	long long int totalCount_updated;
 	float last_pps_sample;
+
+	int xi;
+	int f_nom = 50;
+	int periods_for_calc = 3;
+	int samples_in_period = rate/f_nom;
+	int sliding_in_samples = samplesPerChannel;
 
 	while(1==1) // for retriggering? (when by PPS)
 	{
@@ -264,16 +277,16 @@ int main(void)
 				//printf("currentIndex =      %-10d \n\n", index);
 
 				/* Example of timestamp in microsecond. */
-                                if (!gettimeofday(&timer_usec, NULL)) {
+                                /*if (!gettimeofday(&timer_usec, NULL)) {
                                 timestamp_usec = ((long long int) timer_usec.tv_sec) * 1000000ll + (long long int) timer_usec.tv_usec;
                                 }
                                 else {
                                 timestamp_usec = -1;
                                 }
-				/*--------------------------------------*/
+
 				printf("\nno-reps currentTotalCount = %llu", transferStatus.currentTotalCount);
                                 timestamp_usec_prev = timestamp_usec;
-
+				*/
 				totalCount_updated = transferStatus.currentTotalCount - pps_idx_sum;
 				itt_last =  round((totalCount_updated-1)*dt + itt_compens);
 				itt_first = round((totalCount_updated-1)*dt + itt_compens - (samplesAcq-1)*dt);
@@ -306,8 +319,28 @@ int main(void)
 				//if () {
 				//	printf("\nPPS! ")
 				//}
+
 				printf("\n-------------------------------\n");
 				pps_detect = 0;
+
+				continue;
+				// ALGORITM FOR SLIDING STARTS HERE:
+
+				if(transferStatus.currentScanCount < periods_for_calc*samples_in_period) { // 3*rate/50
+                                        printf("\n\nWaiting. Channel 2 count so far: %-10llu", transferStatus.currentScanCount);
+                                }
+                                else if((transferStatus.currentScanCount >= periods_for_calc*samples_in_period) && (transferStatus.currentScanCount < periods_for_calc*samples_in_period+sliding_in_samples)) {
+                                        // minimum amount for first DFT
+                                        printf("\n\nFirst DFT. Channel 2 count so far: %-10llu", transferStatus.currentScanCount);
+				}
+                                else if(transferStatus.currentScanCount >= periods_for_calc*samples_in_period+sliding_in_samples) {
+                                        // sufficient amount for sliding i.e. minimum + one period
+                                        printf("\n\nSliding possible. Channel 2 count so far: %-10llu", transferStatus.currentScanCount);
+					exit(0);
+				}
+
+
+
 				//usleep(1000);
 			}
 			last_pps_sample = buffer[samplesAcq-n_channel]; // saving last sample from channel1 for comparison for PPS
