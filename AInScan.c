@@ -55,7 +55,7 @@ void connlost(void *context, char *cause)
 }
 void send_phasor(double f, double abs, double ph_deg, float ptt, MQTTClient client, MQTTClient_message pubmsg, MQTTClient_deliveryToken token) {
         char str[50];
-        sprintf(str, "%f|%f|%f|%f", abs, ph_deg, f, ptt);
+        sprintf(str, "%f\t%f\t%f\t%f", abs, ph_deg, f, ptt);
         printf("sending: %s\n", str);
         pubmsg.payload = str;
         pubmsg.payloadlen = strlen(str);//12; //sizeof(double); //strlen(PAYLOAD);
@@ -78,7 +78,7 @@ int main(void)
 	// cont.: 32 seems minimum for desired frequencies (test with printing totalcount only) e.g. for 10kHz, 32 i.e. batch every 3.2ms ~ 300 frames/second with 10kHz
 	// for 100 kHz 32 samples in a package works with 1 channel
 	int samplesPerChannel_checked = 64;
-	double rate = 40000;
+	double rate = 40000;//38400;
 	ScanOption scanOptions = (ScanOption) (SO_DEFAULTIO | SO_CONTINUOUS);
 	AInScanFlag flags = AINSCAN_FF_DEFAULT;
 
@@ -244,7 +244,7 @@ int main(void)
 	        x_buffer[xi] = xi+0.2;
         }
 	printf("Check the size of the Wm1, Wm2!! It should be: %d\n", M);
-        double complex Wm1[5][2400], Wm2[5][2400];
+        double complex Wm1[5][2400], Wm2[5][2400]; //2304
         printf("%f + i*%f\n", creal(cexp(-I)), cimag(cexp(-I)));
 
         for (ki=0; ki<5; ki++){  // for k 1 to 5 i.e. 3+/-2, not universal, depending on M etc.
@@ -299,6 +299,7 @@ int main(void)
 	double B, alpha, delta_bin, time_win, delta_f, f_estim, A_estim, ph_estim;
         int ki_max, k_max, esign, ki_max_esign;
         double Xk_Habs[3], Xk_Hmax;
+	B = 1199.5; //1151.5 // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
 
 	// start the acquisition
 	err = ulAInScan(daqDeviceHandle, lowChan, highChan, inputMode, range, samplesPerChannel, &rate, scanOptions, flags, buffer);
@@ -634,7 +635,7 @@ int main(void)
                                 //double B, alpha, delta_bin, time_win, delta_f, f_estim, A_estim, ph_estim;
                                 //int ki_max, k_max, esign, ki_max_esign;
                                 //double Xk_Habs[3], Xk_Hmax;
-                                B = 1199.5; // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
+                                //B = 1199.5; // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
                                 time_win = (float)periods_for_calc / (float)f_nom;
 
                                 Xk_Habs[0] = cabsf(Xk_H1)/B;
