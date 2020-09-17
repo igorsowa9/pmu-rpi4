@@ -304,6 +304,7 @@ int main(void)
 	FILE *fp;
 
    	fp = fopen("/home/pi/Platone/algorithm_in_c/res.txt", "w+");
+	fprintf(fp, "%f ", rate);
    	//fprintf(fp, "This is testing for fprintf...\n");
    	//fputs("This is testing for fputs...\n", fp);
    	//fclose(fp);
@@ -323,6 +324,8 @@ int main(void)
         real_rate = rate;
         dt = 1/(rate*n_channel) * 1000000;
         itt_compens = 0.0; // no trigger so no predictable compensation (?)
+
+	fprintf(fp, "%f ", real_rate);
 
 	if(err == ERR_NO_ERROR)
 	{
@@ -389,7 +392,8 @@ int main(void)
 				//printf("\nmod: %d", (int)transferStatus.currentScanCount % (int)samplesPerChannel_checked);
 
 				if(transferStatus.currentTotalCount != mem_totalcount && (int)transferStatus.currentScanCount % (int)samplesPerChannel_checked == 0){
-					printf("\nDIFF (total count): %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
+					printf("\nSTART: DIFF (from total count): %d (total count", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
+					printf("= %-10llu)", transferStatus.currentTotalCount);
 					if ((int)transferStatus.currentTotalCount-(int)mem_totalcount != n_channel*samplesPerChannel_checked) {
 						printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
 						printf("\n\nMISSED SAMPLES? Check Scan/Total Counts vs. samplesPerChannel_checked, samplesPerChannel_checked, sliding_in_samples !!! \n");
@@ -402,10 +406,12 @@ int main(void)
 					}
 					mem_totalcount = transferStatus.currentTotalCount; // in order to avoid repeating for the same counter
 
+					fprintf(fp, "\n");
 					for(xi=0;xi<n_channel*samplesPerChannel_checked;xi++) {
 						fprintf(fp, "%+-10.6f ", buffer[xi]);
-						if((xi+1)%32==0){fprintf(fp,"\n");}
+						//if((xi+1)%32==0){fprintf(fp,"\n");}
                                         }
+					fprintf(fp, "%-10llu ", mem_totalcount);
 
 					if(debug_sliding==1){
 						printf("\n\ncurrentScanCount =  %-10llu", transferStatus.currentScanCount);
@@ -492,12 +498,12 @@ int main(void)
 					///////////////////////////////////////////////
 
 					if(transferStatus.currentScanCount < periods_for_calc*samples_in_period) { // 3*rate/50
-						//printf("\n\nWaiting. Channel count so far: %-10llu", transferStatus.currentScanCount);
+						printf("\nWaiting. Channel count so far: %-10llu", transferStatus.currentScanCount);
 						continue;
 					}
 					else if((transferStatus.currentScanCount >= periods_for_calc*samples_in_period) && (transferStatus.currentScanCount < periods_for_calc*samples_in_period+sliding_in_samples)) {
 						// minimum amount for first DFT
-						//printf("\n\nFirst DFT. Channel count so far: %-10llu", transferStatus.currentScanCount);
+						printf("\nFirst DFT. Channel count so far: %-10llu", transferStatus.currentScanCount);
 
 						if(debug_sliding==1){
 							printf("\nNewest %d samples: n_channel*(3*int_rate/50). Oldest excess is cut off.\n", n_channel*periods_for_calc*int_rate/f_nom);
@@ -552,7 +558,7 @@ int main(void)
 					}
 					else if(transferStatus.currentScanCount >= periods_for_calc*samples_in_period+sliding_in_samples) {
 						// sufficient amount for sliding i.e. minimum + one period
-						//printf("\n\nSliding possible. Channel count so far: %-10llu", transferStatus.currentScanCount);
+						printf("\nSliding possible. Channel count so far: %-10llu", transferStatus.currentScanCount);
 
 						// copy, create new array with only one signal memcpy(x_buffer+(x_buffer_size-n_channel*samplesPerChannel_checked), buffer, n_channel*samplesPerChannel_checked*sizeof(double));
                                                 for(xi=0; xi<x_buffer_ch1_size; xi++) {
@@ -638,11 +644,12 @@ int main(void)
                                                 	}
 						}
 						phasor_counter++;
-						//float 
+						//float
 						phasor_abs = pow(pow(creal(Xk[2]),2)+pow(cimag(Xk[2]),2),0.5);
 
 						//printf("\nXk3 after slide: abs:%f  deg:%f", pow(pow(creal(Xk[2]),2)+pow(cimag(Xk[2]),2),0.5), carg(Xk[2])*180/M_PI);
-						printf("\nPhasor (DFT) counter=%d", phasor_counter);
+						//printf("\nPhasor (DFT) counter=%d", phasor_counter);
+
 						//printf("\nSending abs as test MQTT message.\n");
 						//send_phasor(phasor_abs, client, pubmsg, token);
 					}
@@ -650,6 +657,7 @@ int main(void)
 				// INTERpolation here?
 				// here it is sufficient for sliding, rest is windowing and interpolation
 				printf("\nInterpolation of #%d", phasor_counter);
+				fprintf(fp, "%d ", phasor_counter);
 
                                 Xk_H1 = -0.25*creal(Xk[0]) + 0.5*creal(Xk[1]) - 0.25*creal(Xk[2]) + (-0.25*cimag(Xk[0]) + 0.5*cimag(Xk[1]) - 0.25*cimag(Xk[2]))*I;
                                 Xk_H2 = -0.25*creal(Xk[1]) + 0.5*creal(Xk[2]) - 0.25*creal(Xk[3]) + (-0.25*cimag(Xk[1]) + 0.5*cimag(Xk[2]) - 0.25*cimag(Xk[3]))*I;
@@ -696,6 +704,7 @@ int main(void)
 
                                 //printf("\n\nf_estim = %fHz \tA_estim = %fV \tph_estim = %f deg.\n", f_estim, A_estim, ph_estim*180/M_PI);
 
+				fprintf(fp, "%f %f %f %f", f_estim, A_estim, ph_estim*180/M_PI, ptt_ch1);
 				printf("\nSending f,A,ph,ptt as MQTT message.\n");
                                 send_phasor(f_estim, A_estim, ph_estim*180/M_PI, ptt_ch1, client, pubmsg, token);
 
