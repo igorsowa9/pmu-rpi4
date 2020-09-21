@@ -59,7 +59,7 @@ void send_phasor(double f, double abs, double ph_deg, float ptt, MQTTClient clie
         printf("sending: %s\n", str);
         pubmsg.payload = str;
         pubmsg.payloadlen = strlen(str);//12; //sizeof(double); //strlen(PAYLOAD);
-        MQTTClient_publishMessage(client, TOPIC, &pubmsg, &token);
+        //MQTTClient_publishMessage(client, TOPIC, &pubmsg, &token);
 }
 int main(void)
 {
@@ -78,7 +78,7 @@ int main(void)
 	// cont.: 32 seems minimum for desired frequencies (test with printing totalcount only) e.g. for 10kHz, 32 i.e. batch every 3.2ms ~ 300 frames/second with 10kHz
 	// for 100 kHz 32 samples in a package works with 1 channel
 	int samplesPerChannel_checked = 64;
-	double rate = 40000;//38400;
+	double rate = 40000;//40k/38400;
 	ScanOption scanOptions = (ScanOption) (SO_DEFAULTIO | SO_CONTINUOUS);
 	AInScanFlag flags = AINSCAN_FF_DEFAULT;
 
@@ -219,7 +219,7 @@ int main(void)
 	/// ############################
         // prepare for phasor estimation
 	int debug_sliding = 0;
-	int debug_tagging = 0;
+	int debug_tagging = 1;
 
 	int periods_for_calc = 3;
 	int f_nom = 50;
@@ -243,7 +243,7 @@ int main(void)
 	        x_buffer[xi] = xi+0.2;
         }
 	printf("Check the size of the Wm1, Wm2!! It should be: %d\n", M);
-        double complex Wm1[5][2400], Wm2[5][2400]; //2304
+        double complex Wm1[5][2400], Wm2[5][2400]; //2400/2304
         printf("%f + i*%f\n", creal(cexp(-I)), cimag(cexp(-I)));
 
         for (ki=0; ki<5; ki++){  // for k 1 to 5 i.e. 3+/-2, not universal, depending on M etc.
@@ -253,6 +253,7 @@ int main(void)
                         Wm2[ki][m] = cexp(2*I*M_PI*k*m/M);
                 }
         }
+
 	/*
 	if(debug_sliding==1){
         for(ki=0; ki<5; ki++) {
@@ -276,10 +277,13 @@ int main(void)
         int samplesAcq = samplesPerChannel_checked * n_channel; // 16*2 for 2 channels and 100kS
         float real_rate;
 
-        int pps_detect, pps_xi, pps_idx;
+        int pps_detect, pps_xi, first_pps_xi, pps_idx, first_pps_detect, first_pps_detect_diff;
         long long int pps_idx_sum = 0;
-        long long int totalCount_updated;
+	long long int first_pps_shift = 0;
+        long long int totalCount_updated, totalCount_updated_from_firstPPS;
         float last_pps_sample;
+	first_pps_detect = 0;
+	first_pps_detect_diff = 0; // flag for avoiding DIFF missing samples after first pps trigger
 	// $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
 	// DFT
@@ -298,12 +302,13 @@ int main(void)
 	double B, alpha, delta_bin, time_win, delta_f, f_estim, A_estim, ph_estim;
         int ki_max, k_max, esign, ki_max_esign;
         double Xk_Habs[3], Xk_Hmax;
-	B = 1199.5; //1151.5 // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
+	B = 1199.5; //1199.5/1151.5 // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
 
+	printf("\nCheck the path of the file!");
 	// writing samples to file
 	FILE *fp;
 
-   	fp = fopen("/home/pi/Platone/algorithm_in_c/res.txt", "w+");
+   	fp = fopen("/home/pi/Platone/pmu-rpi4/res.txt", "w+");
 	fprintf(fp, "%f ", rate);
    	//fprintf(fp, "This is testing for fprintf...\n");
    	//fputs("This is testing for fputs...\n", fp);
@@ -357,7 +362,7 @@ int main(void)
 			//printf("actual scan rate = %f\n\n", rate);
 
 			index = transferStatus.currentIndex;
-			/*if (transferStatus.currentTotalCount < 40000 && transferStatus.currentTotalCount > 0 ) {
+			/*if (transferStatus.currentTotalCount < 4000000 && transferStatus.currentTotalCount > 0 ) {
 				printf("\n\ncurrentScanCount =  %-10llu", transferStatus.currentScanCount);
 				printf("\ncurrentTotalCount = %-10llu", transferStatus.currentTotalCount);
 				//printf("\ncurrentIndex =      %-10d \n", index);
@@ -367,6 +372,37 @@ int main(void)
 	                       printf("%+-10.6f ", buffer[xi]);
         	                if((xi+1)%10==0){printf("\n");}
                 	}*/
+
+			// DETECT FIRST PPS
+			for(xi=0; xi<samplesAcq; xi++) {
+				//printf("%+-10.6f ", buffer[xi]);
+				if (first_pps_detect==0 && xi==0 && last_pps_sample<v_pps && buffer[0]>=v_pps) {
+ 	                               	printf("<-PPS!\t");
+                                       	first_pps_detect = 1;
+                             		//pps_detect = 1;
+					first_pps_xi = xi;
+					//pps_xi = xi;
+					pps_idx_sum = transferStatus.currentTotalCount - (samplesAcq-first_pps_xi);
+                                	first_pps_shift = transferStatus.currentTotalCount - (samplesAcq-first_pps_xi);
+				}
+                                if (first_pps_detect==0 && xi>=n_channel && xi%n_channel==0  && buffer[xi-n_channel]<v_pps && buffer[xi]>=v_pps) {
+                                       	printf("<-PPS!\t");
+                                       	first_pps_detect = 1;
+					//pps_detect = 1;
+                                       	first_pps_xi = xi;
+					//pps_xi = xi;
+					pps_idx_sum = transferStatus.currentTotalCount - (samplesAcq-first_pps_xi);
+					first_pps_shift = transferStatus.currentTotalCount - (samplesAcq-first_pps_xi);
+				}
+				//if ((xi+1)%10==0){printf("\n");}
+			}
+			//printf("\npps_idx_sum: %lld first_pps_shift: %lld", pps_idx_sum, first_pps_shift);
+			//memcpy(first_pps_shift, pps_idx_sum, sizeof(first_pps_shift));
+			//first_pps_shift = 0 + pps_idx_sum;
+			//printf("\ncurrentTotalCount = %-10llu", transferStatus.currentTotalCount);
+			//printf("\nfirst_pps_xi: %d", first_pps_xi);
+			//printf("\npps_idx_sum: %-10llu\n", pps_idx_sum);
+			//if (first_pps_detect == 1) {exit(0);}
 
 			//continue;
 			if(index >= 0)
@@ -391,19 +427,31 @@ int main(void)
 				//printf("\nsamplesPerChannel_checked: %d", (int)samplesPerChannel_checked);
 				//printf("\nmod: %d", (int)transferStatus.currentScanCount % (int)samplesPerChannel_checked);
 
-				if(transferStatus.currentTotalCount != mem_totalcount && (int)transferStatus.currentScanCount % (int)samplesPerChannel_checked == 0){
-					printf("\nSTART: DIFF (from total count): %d (total count", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
-					printf("= %-10llu)", transferStatus.currentTotalCount);
+				if(first_pps_detect == 1 && transferStatus.currentTotalCount != mem_totalcount && (int)transferStatus.currentScanCount % (int)samplesPerChannel_checked == 0){
+					//printf("\nSTART: DIFF (from total count): %d (total count", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
+					//printf("= %-10llu)", transferStatus.currentTotalCount);
 					if ((int)transferStatus.currentTotalCount-(int)mem_totalcount != n_channel*samplesPerChannel_checked) {
-						printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
-						printf("\n\nMISSED SAMPLES? Check Scan/Total Counts vs. samplesPerChannel_checked, samplesPerChannel_checked, sliding_in_samples !!! \n");
-						exit(0);
+						if (first_pps_detect_diff == 0) {
+							printf("\nDIFF due to the first pps trigger.");
+							first_pps_detect_diff = 1;
+							mem_totalcount = transferStatus.currentTotalCount;
+						} else {
+							printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
+							printf("\n\nMISSED SAMPLES? Check Scan/Total Counts vs. samplesPerChannel_checked, samplesPerChannel_checked, sliding_in_samples !!! \n");
+							exit(0);
+						}
 					}
-					if ((float)((int)transferStatus.currentTotalCount-(int)mem_totalcount)/(float)n_channel != samplesPerChannel_checked) {
-						printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
-						printf("\n\nWRONG sampled per channel settings? Check Scan/Total Counts vs. samplesPerChannel_checked !!! \n");
-						exit(0);
-					}
+					/*if ((float)((int)transferStatus.currentTotalCount-(int)mem_totalcount)/(float)n_channel != samplesPerChannel_checked) {
+						if (first_pps_detect_diff == 0) {
+                                                        printf("\nDIFF due to the first pps trigger.");
+                                                        first_pps_detect_diff = 1;
+							mem_totalcount = transferStatus.currentTotalCount;
+						} else {
+							printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
+							printf("\n\nWRONG sampled per channel settings? Check Scan/Total Counts vs. samplesPerChannel_checked !!! \n");
+							exit(0);
+						}
+					}*/
 					mem_totalcount = transferStatus.currentTotalCount; // in order to avoid repeating for the same counter
 
 					fprintf(fp, "\n");
@@ -412,6 +460,11 @@ int main(void)
 						//if((xi+1)%32==0){fprintf(fp,"\n");}
                                         }
 					fprintf(fp, "%-10llu ", mem_totalcount);
+
+					//printf("\nFIRST totalCount_updated: %d\n", (int)totalCount_updated);
+					//printf("\ncurrentTotalCount = %-10llu", transferStatus.currentTotalCount);
+		                        //printf("\nfirst_pps_xi: %d", first_pps_xi);
+                		        //printf("\ntotalCount_updated: %d\n", (int)totalCount_updated);
 
 					if(debug_sliding==1){
 						printf("\n\ncurrentScanCount =  %-10llu", transferStatus.currentScanCount);
@@ -440,13 +493,12 @@ int main(void)
 							printf("%+-10.6f ", x_buffer[xi]);
 							if((xi+1)%10==0){printf("\n");}
 						}
-						if(transferStatus.currentScanCount>4050){
-                                                	exit(0);
-                                        	}
 					}
 
 					// ASSIGNING ITT to the samples etc.
-					totalCount_updated = transferStatus.currentTotalCount - pps_idx_sum;
+					totalCount_updated = transferStatus.currentTotalCount - pps_idx_sum; // for counting every second and timetags ptt
+					totalCount_updated_from_firstPPS = transferStatus.currentTotalCount - first_pps_shift; // for counting total
+
 					if(debug_tagging==1){
 						printf("\ntotalCount_updated: %d dt: %f real_rate: %f itt_compens: %f", (int)totalCount_updated, dt, real_rate, itt_compens);
 					}
@@ -456,7 +508,8 @@ int main(void)
                                		if(debug_tagging==1) {printf("\nCurrent daq buffer: (compensated itt from %dr to %f)\n", (int)itt_first, itt_last);}
                                		for(xi=0; xi<samplesAcq; xi++) {
                                        		if(debug_tagging==1) {printf("%+-10.6f ", buffer[xi]);}
-		                        	if (xi==0 && last_pps_sample<v_pps && buffer[0]>=v_pps) {
+		                        	// detection of PPS
+						if (xi==0 && last_pps_sample<v_pps && buffer[0]>=v_pps) {
         	                                       	if(debug_tagging==1) {printf("<-PPS!\t");}
 							pps_detect = 1;
 							pps_xi = xi;
@@ -480,7 +533,7 @@ int main(void)
                                     	    	itt_pps = round(itt_compens);
                                     	    	itt_last = (samplesAcq-pps_xi-1)*dt + itt_compens;
 
-                                        	//printf("\nUpdated itt. itt_first(same): %d , itt_ultimate: %d , itt_pps: %d, itt_last: %f", (int)itt_first, (int)itt_ultimate, (int)itt_pps, itt_last );
+                                        	printf("\nUpdated itt. itt_first(same): %d , itt_ultimate: %d , itt_pps: %d, itt_last: %f", (int)itt_first, (int)itt_ultimate, (int)itt_pps, itt_last );
 					}
                         	        //last_pps_sample = buffer[samplesAcq-n_channel]; // saving last sample from channel1 for comparison for PPS
 
@@ -497,13 +550,14 @@ int main(void)
 					// tringgering phasor estimations or waiting //
 					///////////////////////////////////////////////
 
-					if(transferStatus.currentScanCount < periods_for_calc*samples_in_period) { // 3*rate/50
-						printf("\nWaiting. Channel count so far: %-10llu", transferStatus.currentScanCount);
+					if(totalCount_updated_from_firstPPS < periods_for_calc*samples_in_period*n_channel) { // 3*rate/50
+						printf("\nWaiting. Channel count so far: %-10llu. After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
+						printf("\npps_idx_sum: %lld first_pps_shift: %lld", pps_idx_sum, first_pps_shift);
 						continue;
 					}
-					else if((transferStatus.currentScanCount >= periods_for_calc*samples_in_period) && (transferStatus.currentScanCount < periods_for_calc*samples_in_period+sliding_in_samples)) {
+					else if((totalCount_updated_from_firstPPS >= periods_for_calc*samples_in_period*n_channel) && (totalCount_updated_from_firstPPS < (periods_for_calc*samples_in_period+sliding_in_samples)*n_channel)) {
 						// minimum amount for first DFT
-						printf("\nFirst DFT. Channel count so far: %-10llu", transferStatus.currentScanCount);
+						printf("\nFirst DFT. Channel count so far: %-10llu. After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
 
 						if(debug_sliding==1){
 							printf("\nNewest %d samples: n_channel*(3*int_rate/50). Oldest excess is cut off.\n", n_channel*periods_for_calc*int_rate/f_nom);
@@ -530,7 +584,6 @@ int main(void)
                                                         	if((xi+1)%10==0){printf("\n");}
                                                 	}
 						}
-
 						// derive phasor timetab from itt_last from whole buffer (all channels)
 						itt_last_ch1 = itt_last;
 						ptt_ch1 = round(itt_last_ch1 - (M/2-0.5) * dt * n_channel); // average of two middle tags from ch1
@@ -556,9 +609,9 @@ int main(void)
 						//printf("\n End of Xk calculations for all k of interest. Xk3=%f %fj\nPhasor counter=%d\n", creal(Xk[2]), cimag(Xk[2]), phasor_counter);
 
 					}
-					else if(transferStatus.currentScanCount >= periods_for_calc*samples_in_period+sliding_in_samples) {
+					else if(totalCount_updated_from_firstPPS >= (periods_for_calc*samples_in_period+sliding_in_samples)*n_channel) {
 						// sufficient amount for sliding i.e. minimum + one period
-						printf("\nSliding possible. Channel count so far: %-10llu", transferStatus.currentScanCount);
+						printf("\nSliding possible. Channel count so far: %-10llu.  After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
 
 						// copy, create new array with only one signal memcpy(x_buffer+(x_buffer_size-n_channel*samplesPerChannel_checked), buffer, n_channel*samplesPerChannel_checked*sizeof(double));
                                                 for(xi=0; xi<x_buffer_ch1_size; xi++) {
@@ -645,7 +698,7 @@ int main(void)
 						}
 						phasor_counter++;
 						//float
-						phasor_abs = pow(pow(creal(Xk[2]),2)+pow(cimag(Xk[2]),2),0.5);
+						//phasor_abs = pow(pow(creal(Xk[2]),2)+pow(cimag(Xk[2]),2),0.5);
 
 						//printf("\nXk3 after slide: abs:%f  deg:%f", pow(pow(creal(Xk[2]),2)+pow(cimag(Xk[2]),2),0.5), carg(Xk[2])*180/M_PI);
 						//printf("\nPhasor (DFT) counter=%d", phasor_counter);

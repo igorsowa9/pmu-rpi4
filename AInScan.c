@@ -345,12 +345,18 @@ int main(void)
 			//printf("actual scan rate = %f\n\n", rate);
 
 			index = transferStatus.currentIndex;
-			if (transferStatus.currentTotalCount < 200 && transferStatus.currentTotalCount > 0 ) {
+			if (transferStatus.currentTotalCount < 40000 && transferStatus.currentTotalCount > 0 ) {
 				printf("\n\ncurrentScanCount =  %-10llu", transferStatus.currentScanCount);
 				printf("\ncurrentTotalCount = %-10llu", transferStatus.currentTotalCount);
 				//printf("\ncurrentIndex =      %-10d \n", index);
 			}
-			//continue;
+			printf("\nPre-Current daq buffer:\n");
+                        for(xi=0;xi<n_channel*daq_1ch_sampling_size;xi++) {
+                                printf("%+-10.6f ", buffer[xi]);
+                                if((xi+1)%10==0){printf("\n");}
+                        }
+			continue;
+
 			if(index >= 0)
 			{
 				// display the data
