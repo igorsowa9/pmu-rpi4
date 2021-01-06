@@ -219,7 +219,7 @@ int main(void)
 	/// ############################
         // prepare for phasor estimation
 	int debug_sliding = 0;
-	int debug_tagging = 1;
+	int debug_tagging = 0;
 
 	int periods_for_calc = 3;
 	int f_nom = 50;
@@ -272,7 +272,7 @@ int main(void)
 	// assigning timetags to samples $$$$$$$$$$$$$$$$$$$$$$
         float dt; // in microseconds
         float itt_compens; // compensation for all tags: trigger 1us, trigger dt/2
-        float v_pps = 1.5; // it is about 3.3V
+        float v_pps = 0.5; // it is about 3.3V
         float itt_last, itt_first, itt_ultimate, itt_pps, itt_last_ch1, ptt_ch1;
         int samplesAcq = samplesPerChannel_checked * n_channel; // 16*2 for 2 channels and 100kS
         float real_rate;
@@ -285,6 +285,7 @@ int main(void)
 	first_pps_detect = 0;
 	first_pps_detect_diff = 0; // flag for avoiding DIFF missing samples after first pps trigger
 	int reset_at_pps = 0;
+	int pps_count = 0;
 	// $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
 	// DFT
@@ -381,6 +382,7 @@ int main(void)
 				if (first_pps_detect==0 && xi==0 && last_pps_sample<v_pps && buffer[0]>=v_pps) {
  	                               	printf("<-PPS!\t");
                                        	first_pps_detect = 1;
+					//pps_count++;
                              		//pps_detect = 1;
 					first_pps_xi = xi;
 					//pps_xi = xi;
@@ -390,6 +392,7 @@ int main(void)
                                 if (first_pps_detect==0 && xi>=n_channel && xi%n_channel==0  && buffer[xi-n_channel]<v_pps && buffer[xi]>=v_pps) {
                                        	printf("<-PPS!\t");
                                        	first_pps_detect = 1;
+					//pps_count++;
 					//pps_detect = 1;
                                        	first_pps_xi = xi;
 					//pps_xi = xi;
@@ -498,9 +501,8 @@ int main(void)
 					}
 
 					// ASSIGNING ITT to the samples etc.
-					totalCount_updated = transferStatus.currentTotalCount - pps_idx_sum; // for counting every second and timetags ptt
 					totalCount_updated_from_firstPPS = transferStatus.currentTotalCount - first_pps_shift; // for counting total
-
+					totalCount_updated = transferStatus.currentTotalCount - pps_idx_sum; // for counting every second and timetags ptt
 					if(debug_tagging==1){
 						printf("\ntotalCount_updated: %d dt: %f real_rate: %f itt_compens: %f", (int)totalCount_updated, dt, real_rate, itt_compens);
 					}
@@ -512,17 +514,20 @@ int main(void)
                                        		if(debug_tagging==1) {printf("%+-10.6f ", buffer[xi]);}
 		                        	// detection of PPS
 						if (xi==0 && last_pps_sample<v_pps && buffer[0]>=v_pps) {
-        	                                       	if(debug_tagging==1) {printf("<-PPS!\t");}
+        	                                       	if(debug_tagging==1) {printf("<-PPS(last)!\t"); printf("last pps s: %f", last_pps_sample);}
 							pps_detect = 1;
 							pps_xi = xi;
-                       	                	}
+                       	                		pps_count++;
+						}
                                	        	if (xi>=n_channel && xi%n_channel==0  && buffer[xi-n_channel]<v_pps && buffer[xi]>=v_pps) {
                                        	        	if(debug_tagging==1) {printf("<-PPS!\t");}
 							pps_detect = 1;
 							pps_xi = xi;
+							pps_count++;
                                        		}
                                        		if (debug_tagging==1 && (xi+1)%10==0){printf("\n");}
 	                               	}
+					last_pps_sample = buffer[samplesAcq-n_channel];
 
 					if (pps_detect == 1) {
                                         	//printf("\npps_xi=%d", pps_xi);
@@ -553,13 +558,15 @@ int main(void)
 					///////////////////////////////////////////////
 
 					if(totalCount_updated_from_firstPPS < periods_for_calc*samples_in_period*n_channel) { // 3*rate/50
-						printf("\nWaiting. Channel count so far: %-10llu. After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
+						//printf("\nWaiting. Channel count so far: %-10llu. After first PPS: %d. PPS count: %d. Updated Total count: %d",
+							//transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, pps_count, (int)totalCount_updated);
 						printf("\npps_idx_sum: %lld first_pps_shift: %lld", pps_idx_sum, first_pps_shift);
 						continue;
 					}
 					else if((totalCount_updated_from_firstPPS >= periods_for_calc*samples_in_period*n_channel) && (totalCount_updated_from_firstPPS < (periods_for_calc*samples_in_period+sliding_in_samples)*n_channel)) {
 						// minimum amount for first DFT
-						printf("\nFirst DFT. Channel count so far: %-10llu. After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
+						//printf("\nFirst DFT. Channel count so far: %-10llu. After first PPS: %d. PPS count: %d. Updated Total count: %d",
+							//transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, pps_count, (int)totalCount_updated);
 
 						if(debug_sliding==1){
 							printf("\nNewest %d samples: n_channel*(3*int_rate/50). Oldest excess is cut off.\n", n_channel*periods_for_calc*int_rate/f_nom);
@@ -613,7 +620,8 @@ int main(void)
 					}
 					else if(totalCount_updated_from_firstPPS >= (periods_for_calc*samples_in_period+sliding_in_samples)*n_channel) {
 						// sufficient amount for sliding i.e. minimum + one period
-						printf("\nSliding possible. Channel count so far: %-10llu.  After first PPS: %d. Updated Total count: %d", transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, (int)totalCount_updated);
+						//printf("\nSliding possible. Channel count so far: %-10llu. After first PPS: %d. PPS count: %d. Updated Total count: %d",
+							//transferStatus.currentScanCount, (int)totalCount_updated_from_firstPPS, pps_count, (int)totalCount_updated);
 
 						// copy, create new array with only one signal memcpy(x_buffer+(x_buffer_size-n_channel*samplesPerChannel_checked), buffer, n_channel*samplesPerChannel_checked*sizeof(double));
                                                 for(xi=0; xi<x_buffer_ch1_size; xi++) {
@@ -636,6 +644,9 @@ int main(void)
 						// derive phasor timetag from itt_last from whole buffer (all channels)
 	                        	        itt_last_ch1 = itt_last;
                 	                        ptt_ch1 = round(itt_last_ch1 - (M/2-0.5) * dt * n_channel); // average of two middle tags from ch1
+						if (reset_at_pps==0) {
+							ptt_ch1 = ptt_ch1 + (pps_count-1)*1000000;
+						}
 						if(debug_tagging==1){
 							printf("\n itt_last (all-channels-buffer): %f", itt_last);
 							printf("\n itt_last (ch1-channel-buffer): %f", itt_last_ch1);
@@ -711,7 +722,7 @@ int main(void)
 
 				// INTERpolation here?
 				// here it is sufficient for sliding, rest is windowing and interpolation
-				printf("\nInterpolation of #%d", phasor_counter);
+				//printf("\nInterpolation of #%d", phasor_counter);
 				fprintf(fp, "%d ", phasor_counter);
 
                                 Xk_H1 = -0.25*creal(Xk[0]) + 0.5*creal(Xk[1]) - 0.25*creal(Xk[2]) + (-0.25*cimag(Xk[0]) + 0.5*cimag(Xk[1]) - 0.25*cimag(Xk[2]))*I;
@@ -760,11 +771,12 @@ int main(void)
                                 //printf("\n\nf_estim = %fHz \tA_estim = %fV \tph_estim = %f deg.\n", f_estim, A_estim, ph_estim*180/M_PI);
 
 				fprintf(fp, "%f %f %f %f", f_estim, A_estim, ph_estim*180/M_PI, ptt_ch1);
-				printf("\nSending f,A,ph,ptt as MQTT message.\n");
-                                send_phasor(f_estim, A_estim, ph_estim*180/M_PI, ptt_ch1, client, pubmsg, token);
+				//printf("\nSending f,A,ph,ptt as MQTT message.\n");
+                                //send_phasor(f_estim, A_estim, ph_estim*180/M_PI, ptt_ch1, client, pubmsg, token);
 
 				}
-			last_pps_sample = buffer[samplesAcq-n_channel]; // saving last sample from channel1 for comparison for PPS
+			//last_pps_sample = buffer[samplesAcq-n_channel]; // saving last sample from channel1 for comparison for PPS
+			//printf("\nlast_pps_sample: %f", last_pps_sample);
 			//usleep(1000);
 			}
 		total_count = transferStatus.currentTotalCount;
