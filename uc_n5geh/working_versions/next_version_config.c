@@ -292,52 +292,9 @@ int main(void)
         dt = DT ;//1/(real_rate*n_channel) * 1000000;
         //itt_compens = 0.0; // no trigger so no predictable compensation (?)
 	printf("real_rate: %f and dt: %f", real_rate, dt);
-	basic_test();
+
 //	exit(0);
-end:
-        // disconnect from the DAQ device
-        ulDisconnectDaqDevice(daqDeviceHandle);
-        // end from MQTT
-        MQTTClient_disconnect(client, 10000);
-        MQTTClient_destroy(&client);
 
-        /* end timestamp. */
-        if (!gettimeofday(&timer_usec, NULL)) {
-        timestamp_usec_stop = ((long long int) timer_usec.tv_sec) * 1000000ll + (long long int) timer_usec.tv_usec;
-        }
-        else {
-        timestamp_usec_stop = -1;
-        }
-        printf("\nstop-start timetags: %lld Total count: %-10llu", timestamp_usec_stop-timestamp_usec_start, total_count);
-        printf("\nRate: %0.f Hz. One period (50Hz) has ~%0.f samples. Acquisition (should be) every: %d samples i.e. every %0.fus", rate, rate/50, samplesPerChannel_checked, samplesPerChannel_ch$
-        printf("\nResulting average acquisition: total time/total acquisitions = %0.2f\n", (float)(timestamp_usec_stop-timestamp_usec_start)/((float)total_count/(float)samplesPerChannel_checked)$
-
-        // release the handle to the DAQ device
-        if(daqDeviceHandle)
-                ulReleaseDaqDevice(daqDeviceHandle);
-
-        // release the scan buffer
-        if(buffer)
-                free(buffer);
-
-        if(err != ERR_NO_ERROR)
-        {
-                char errMsg[ERR_MSG_LEN];
-                ulGetErrMsg(err, errMsg);
-                printf("Error Code: %d \n", err);
-                printf("Error Message: %s \n", errMsg);
-        }
-
-        return 0;
-}
-
-void basic_test(void){
-	a=1;
-}
-
-
-void basic_run()
-{
 	if(err == ERR_NO_ERROR)
 	{
 		ScanStatus status;
@@ -722,4 +679,40 @@ void basic_run()
 			err = ulAInScanStop(daqDeviceHandle);
 		}
 	}
+
+end:
+	// disconnect from the DAQ device
+        ulDisconnectDaqDevice(daqDeviceHandle);
+        // end from MQTT
+        MQTTClient_disconnect(client, 10000);
+        MQTTClient_destroy(&client);
+
+	/* end timestamp. */
+        if (!gettimeofday(&timer_usec, NULL)) {
+        timestamp_usec_stop = ((long long int) timer_usec.tv_sec) * 1000000ll + (long long int) timer_usec.tv_usec;
+        }
+        else {
+        timestamp_usec_stop = -1;
+        }
+	printf("\nstop-start timetags: %lld Total count: %-10llu", timestamp_usec_stop-timestamp_usec_start, total_count);
+	printf("\nRate: %0.f Hz. One period (50Hz) has ~%0.f samples. Acquisition (should be) every: %d samples i.e. every %0.fus", rate, rate/50, samplesPerChannel_checked, samplesPerChannel_checked/rate*1000000);
+	printf("\nResulting average acquisition: total time/total acquisitions = %0.2f\n", (float)(timestamp_usec_stop-timestamp_usec_start)/((float)total_count/(float)samplesPerChannel_checked));
+
+	// release the handle to the DAQ device
+	if(daqDeviceHandle)
+		ulReleaseDaqDevice(daqDeviceHandle);
+
+	// release the scan buffer
+	if(buffer)
+		free(buffer);
+
+	if(err != ERR_NO_ERROR)
+	{
+		char errMsg[ERR_MSG_LEN];
+		ulGetErrMsg(err, errMsg);
+		printf("Error Code: %d \n", err);
+		printf("Error Message: %s \n", errMsg);
+	}
+
+	return 0;
 }

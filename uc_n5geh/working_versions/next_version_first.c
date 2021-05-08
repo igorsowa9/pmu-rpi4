@@ -8,17 +8,26 @@
 #include <sys/timeb.h>
 #include <sys/time.h>
 #include "MQTTClient.h"
-#include "config.h"
 
 #define MAX_DEV_COUNT  100
 #define MAX_STR_LENGTH 64
 #define MAX_SCAN_OPTIONS_LENGTH 256
 
 #define M_PI 3.14159265358979323846
+//#define M_E 2.71828182845904523536
+
+#define ADDRESS     "tcp://localhost:1883"
+#define CLIENTID    "ExampleClientPub"
+#define TOPIC       "pmu_topic"
+#define TEST_PAYL   "Hello World!"
 #define QOS         0
 #define TIMEOUT     10000L
 #define TS_UTC	    1 /* timestamps either in UTC or absolute from first PPS if = 0*/
 volatile MQTTClient_deliveryToken deliveredtoken;
+
+/* SETTINGS */
+#define SET_FR	    50 // reporting rate
+
 
 void connlost(void *context, char *cause)
 {
@@ -37,7 +46,7 @@ int main(void)
 {
 	/*------- SETTINGS ------------*/
 	int Fr;
-	Fr = REPRATE; // reporting rate
+	Fr = SET_FR; // reporting rate
 
 	/*-----------------------------*/
 
@@ -48,15 +57,15 @@ int main(void)
 	unsigned int numDevs = MAX_DEV_COUNT;
 
 	// set some variables that are used to acquire data
-	int lowChan = LOWCH;
-	int highChan = HIGHCH; /* this is for fixed single channel i.e. maximum accuracy */
+	int lowChan = 4;
+	int highChan = 5; /* this is for fixed single channel i.e. maximum accuracy */
 	AiInputMode inputMode;
 	Range range;
 	int samplesPerChannel = 64; // 100 would be desired, but for Fs=5kHz daq feeds in 64-samples batches - if it is not 2^x then works bad somehow!!!
 	// cont.: 32 seems minimum for desired frequencies (test with printing totalcount only) e.g. for 10kHz, 32 i.e. batch every 3.2ms ~ 300 frames/second with 10kHz
 	// for 100 kHz 32 samples in a package works with 1 channel
 	int samplesPerChannel_checked = 64;
-	double rate = SRATE; //40k/38400;
+	double rate = 40000;//40k/38400;
 	ScanOption scanOptions = (ScanOption) (SO_DEFAULTIO | SO_CONTINUOUS);
 	AInScanFlag flags = AINSCAN_FF_DEFAULT;
 
@@ -267,7 +276,7 @@ int main(void)
 	double B, alpha, delta_bin, time_win, delta_f, f_estim, A_estim, ph_estim;
         int ki_max, k_max, esign, ki_max_esign;
         double Xk_Habs[3], Xk_Hmax;
-	B = BHANN; //1199.5/1151.5 // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
+	B = 1199.5; //1199.5/1151.5 // sum of Hann windowing for 2400 i.e. 3*40k/50 (check in matlab: sum(hann(2400)) )
 
 	// Aligning to desired framerate and synchronization:
 	double frame_ts, frame_step_us, frame_ts_previous, expected_frame_ts, expected_frame_ts_up, expected_frame_ts_down, ptt_ch1_positive, chosen_ptt, chosen_ptt_original;
@@ -289,55 +298,11 @@ int main(void)
 
 	// calculated dt and compensation based on the real rate ~500035.74 for 2ch/50kS
         real_rate = rate;//rate;
-        dt = DT ;//1/(real_rate*n_channel) * 1000000;
+        dt = 12.5; //1/(real_rate*n_channel) * 1000000;
         //itt_compens = 0.0; // no trigger so no predictable compensation (?)
-	printf("real_rate: %f and dt: %f", real_rate, dt);
-	basic_test();
+	printf("real_rate: %f dt: %f", real_rate, dt);
+
 //	exit(0);
-end:
-        // disconnect from the DAQ device
-        ulDisconnectDaqDevice(daqDeviceHandle);
-        // end from MQTT
-        MQTTClient_disconnect(client, 10000);
-        MQTTClient_destroy(&client);
-
-        /* end timestamp. */
-        if (!gettimeofday(&timer_usec, NULL)) {
-        timestamp_usec_stop = ((long long int) timer_usec.tv_sec) * 1000000ll + (long long int) timer_usec.tv_usec;
-        }
-        else {
-        timestamp_usec_stop = -1;
-        }
-        printf("\nstop-start timetags: %lld Total count: %-10llu", timestamp_usec_stop-timestamp_usec_start, total_count);
-        printf("\nRate: %0.f Hz. One period (50Hz) has ~%0.f samples. Acquisition (should be) every: %d samples i.e. every %0.fus", rate, rate/50, samplesPerChannel_checked, samplesPerChannel_ch$
-        printf("\nResulting average acquisition: total time/total acquisitions = %0.2f\n", (float)(timestamp_usec_stop-timestamp_usec_start)/((float)total_count/(float)samplesPerChannel_checked)$
-
-        // release the handle to the DAQ device
-        if(daqDeviceHandle)
-                ulReleaseDaqDevice(daqDeviceHandle);
-
-        // release the scan buffer
-        if(buffer)
-                free(buffer);
-
-        if(err != ERR_NO_ERROR)
-        {
-                char errMsg[ERR_MSG_LEN];
-                ulGetErrMsg(err, errMsg);
-                printf("Error Code: %d \n", err);
-                printf("Error Message: %s \n", errMsg);
-        }
-
-        return 0;
-}
-
-void basic_test(void){
-	a=1;
-}
-
-
-void basic_run()
-{
 	if(err == ERR_NO_ERROR)
 	{
 		ScanStatus status;
@@ -442,7 +407,7 @@ void basic_run()
 						} else {
 							printf("\nDIFF: %d", (int)transferStatus.currentTotalCount-(int)mem_totalcount);
 							printf("\n\nMISSED SAMPLES? Check Scan/Total Counts vs. samplesPerChannel_checked, samplesPerChannel_checked, sliding_in_samples !!! \n");
-							send_phasor(0,0,0,0,0, client, pubmsg, token);
+							exit(0);
 						}
 					}
 					/*----------------------------------------------------------------*/
@@ -645,7 +610,7 @@ void basic_run()
                                 A_estim = 2*Xk_Hmax*(M_PI*delta_bin*(1-delta_bin*delta_bin))/sin(M_PI*delta_bin);
                                 ph_estim = cargf(Xk_H2)-M_PI*delta_bin;
 
-				//printf("\nPhasor of every batch: %f\t%f\t%f\t%f\t",f_estim,A_estim,ph_estim*180/M_PI,ptt_ch1);
+				printf("\nPhasor of every batch: %f\t%f\t%f\t%f\t",f_estim,A_estim,ph_estim*180/M_PI,ptt_ch1);
 				//continue;
 
 				/* here standard estimation ends - estimation for every incoming batch*/
@@ -722,4 +687,40 @@ void basic_run()
 			err = ulAInScanStop(daqDeviceHandle);
 		}
 	}
+
+end:
+	// disconnect from the DAQ device
+        ulDisconnectDaqDevice(daqDeviceHandle);
+        // end from MQTT
+        MQTTClient_disconnect(client, 10000);
+        MQTTClient_destroy(&client);
+
+	/* end timestamp. */
+        if (!gettimeofday(&timer_usec, NULL)) {
+        timestamp_usec_stop = ((long long int) timer_usec.tv_sec) * 1000000ll + (long long int) timer_usec.tv_usec;
+        }
+        else {
+        timestamp_usec_stop = -1;
+        }
+	printf("\nstop-start timetags: %lld Total count: %-10llu", timestamp_usec_stop-timestamp_usec_start, total_count);
+	printf("\nRate: %0.f Hz. One period (50Hz) has ~%0.f samples. Acquisition (should be) every: %d samples i.e. every %0.fus", rate, rate/50, samplesPerChannel_checked, samplesPerChannel_checked/rate*1000000);
+	printf("\nResulting average acquisition: total time/total acquisitions = %0.2f\n", (float)(timestamp_usec_stop-timestamp_usec_start)/((float)total_count/(float)samplesPerChannel_checked));
+
+	// release the handle to the DAQ device
+	if(daqDeviceHandle)
+		ulReleaseDaqDevice(daqDeviceHandle);
+
+	// release the scan buffer
+	if(buffer)
+		free(buffer);
+
+	if(err != ERR_NO_ERROR)
+	{
+		char errMsg[ERR_MSG_LEN];
+		ulGetErrMsg(err, errMsg);
+		printf("Error Code: %d \n", err);
+		printf("Error Message: %s \n", errMsg);
+	}
+
+	return 0;
 }

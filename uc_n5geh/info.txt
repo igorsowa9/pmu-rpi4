@@ -1,0 +1,2 @@
+Wpisac dt z palca, jesli jest przekalkulowane, to kat rozjezdza sie o prawie 10 stopni, a rate jest tak na prawde niedokladne:
+np. 12.5 dla 2x40kHz a nie 1/rate.
